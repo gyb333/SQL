@@ -194,47 +194,176 @@ RETURN -1
 END
 END  CATCH
 RETURN 1
+Go
+
+
+ALTER PROCEDURE Pr_GetIdentityByLock(
+
+	@TableName NVARCHAR(40),
+
+	@CurrNo INT OUTPUT
+
+)
+
+AS
+	BEGIN TRAN
+
+	BEGIN TRY    		
+
+		UPDATE T_IdentityLock WITH(ROWLOCK) SET CurrNo =CurrNo+1 WHERE  TableName =@TableName 
+
+		SELECT @CurrNo=CurrNo FROM T_IdentityLock WITH (ROWLOCK,UPDLOCK) WHERE TableName= @TableName  
+
+
+
+		IF @CurrNo IS NULL
+
+					BEGIN
+
+					SET @CurrNo=1              
+
+					INSERT INTO T_IdentityLock(TableName,CurrNo) VALUES(@TableName,@CurrNo)
+
+					END
+
+	
+
+		IF @@TRANCOUNT>0
+
+			BEGIN
+
+				COMMIT TRAN
+
+			END
+
+	END TRY
+
+	BEGIN CATCH
+
+		SET @CurrNo =-1
+
+		IF @@TRANCOUNT >0
+
+			BEGIN
+
+				ROLLBACK TRAN
+
+				RETURN -1
+
+			END
+
+	END  CATCH 
+
+	RETURN 1
+
+Go
 
 IF OBJECT_ID('T_IdentitySNO', 'U') IS NOT NULL
-DROP TABLE T_IdentitySNO
-GO
+  DROP TABLE T_IdentitySNO
+  GO
 CREATE TABLE T_IdentitySNO(
-TableName NVARCHAR(40) ,
-BillID INT ,
-CurrSNO INT DEFAULT 0
-constraint Pk_SNO primary key(TableName,BillID)
+    --ID INT  IDENTITY ,
+	TableName NVARCHAR(40) ,
+	BillID INT ,
+	CurrSNO INT DEFAULT 0
+	constraint Pk_SNO primary key(TableName,BillID)
 )
+go
+
+--CREATE INDEX IX_T_IdentitySNO ON T_IdentitySNO(TableName,BillID) INCLUDE(CurrSNO);
+
+GO
+IF EXISTS (
+  SELECT * 
+    FROM INFORMATION_SCHEMA.ROUTINES 
+   WHERE SPECIFIC_SCHEMA = N'dbo'
+     AND SPECIFIC_NAME = N'Pr_GetIdentitySNO' 
+)
+   DROP PROCEDURE Pr_GetIdentitySNO
 GO
 CREATE PROCEDURE Pr_GetIdentitySNO(
-@TableName NVARCHAR(40),
-@BillID INT ,
-@CurrSNO INT OUTPUT
+	@TableName NVARCHAR(40),
+	@BillID INT ,
+	@CurrSNO INT OUTPUT
 )
 AS
+	BEGIN TRAN 
+	BEGIN TRY    		 		  		           
+			SELECT TOP 1 @CurrSNO=CurrSNO FROM T_IdentitySNO WITH (NOLOCK) WHERE TableName= @TableName  AND BillID=@BillID
+			IF @CurrSNO IS NULL
+				BEGIN   
+					SELECT  TOP 1 * FROM T_IdentitySNO WITH (PAGLOCK,UPDLOCK) 
+					ORDER BY TableName,BillID DESC              
+					SELECT TOP 1 @CurrSNO=CurrSNO FROM T_IdentitySNO WITH(NOLOCK) WHERE TableName= @TableName  AND BillID=@BillID
+					IF @CurrSNO IS NULL						                  
+                    BEGIN	                 
+							SELECT  * FROM T_IdentitySNO WITH (UPDLOCK)  
+							ORDER BY TableName,BillID DESC   					
+							SELECT TOP 1 @CurrSNO=CurrSNO FROM T_IdentitySNO WITH(NOLOCK) WHERE TableName= @TableName  AND BillID=@BillID    						             
+							IF @CurrSNO IS NULL
+							BEGIN                          
+								SELECT * FROM T_IdentitySNO WITH (PAGLOCK,XLOCK)  
+								ORDER BY TableName,BillID DESC   					
+								SELECT TOP 1 @CurrSNO=CurrSNO FROM T_IdentitySNO WITH(NOLOCK) WHERE TableName= @TableName  AND BillID=@BillID
+								IF @CurrSNO IS NULL                           
+									BEGIN  
+										SELECT * FROM T_IdentitySNO WITH (XLOCK)  				
+										SELECT TOP 1 @CurrSNO=CurrSNO FROM T_IdentitySNO WITH(NOLOCK) WHERE TableName= @TableName  AND BillID=@BillID
+								        IF @CurrSNO IS NULL                           
+										BEGIN                    
+											SET @CurrSNO=1    						    
+											INSERT INTO T_IdentitySNO(TableName,BillID,CurrSNO) VALUES(@TableName,@BillID,@CurrSNO)	
+										END		
+										ELSE   
+											BEGIN				
+												GOTO l2		
+											END									
+									END    
+								ELSE   
+									BEGIN				
+										GOTO l2		
+									END	
+							END            
+							ELSE   
+								BEGIN				
+								GOTO l2		
+								END	
+                 
+					END
+					ELSE   
+							BEGIN   					
+							GOTO l2		
+							END			                  
+				END
+			ELSE
+				BEGIN   
+				l2:		          
+				UPDATE T_IdentitySNO SET @CurrSNO=CurrSNO =CurrSNO+1 WHERE  TableName =@TableName AND BillID=@BillID  
+				END
 
-BEGIN TRAN
-BEGIN TRY
-UPDATE T_IdentitySNO SET @CurrSNO =CurrSNO+1 WHERE  TableName =@TableName AND BillID=@BillID
-SELECT @CurrSNO=CurrSNO FROM T_IdentitySNO WHERE TableName= @TableName  AND BillID=@BillID
-IF @CurrSNO IS NULL
-BEGIN
-SET @CurrSNO=1
-INSERT INTO T_IdentitySNO VALUES(@TableName,@BillID,@CurrSNO)
-END
-IF @@TRANCOUNT>0
-BEGIN
-COMMIT TRAN
-END
-END TRY
-BEGIN CATCH
-SET @CurrSNO =-1
-IF @@TRANCOUNT >0
-BEGIN
-ROLLBACK TRAN
-RETURN -1
-END
-END  CATCH
-RETURN 1
+
+		IF @@TRANCOUNT>0
+			BEGIN
+				COMMIT TRAN
+			END
+	END TRY
+	BEGIN CATCH		
+		BEGIN 
+		SET @CurrSNO =-1
+		IF @@TRANCOUNT >0
+			BEGIN    
+				ROLLBACK TRAN                
+				RETURN  -1
+			END
+		END          
+	END  CATCH 
+	RETURN 1
+
+Go
+
+
+
+
 
 
 IF EXISTS (
